@@ -60,6 +60,10 @@ class AudioDecoder(path: String): BaseDecoder(path) {
         return true
     }
 
+    /**
+     * 初始化一个AudioTrack播放器
+     * 当压人数据时，他就播放
+     * */
     override fun initRender(): Boolean {
         val channel = if (mChannels == 1) {
             //单声道
@@ -69,6 +73,10 @@ class AudioDecoder(path: String): BaseDecoder(path) {
             AudioFormat.CHANNEL_OUT_STEREO
         }
 
+        /**
+         * 缓存的作用
+         * 最小缓冲区，的一半
+         * */
         //获取最小缓冲区
         val minBufferSize = AudioTrack.getMinBufferSize(mSampleRate, channel, mPCMEncodeBit)
 

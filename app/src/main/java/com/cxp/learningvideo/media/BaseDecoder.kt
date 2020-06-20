@@ -126,10 +126,20 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
                 //如果数据没有解码完毕，将数据推入解码器解码
                 if (!mIsEOS) {
                     //【解码步骤：2. 见数据压入解码器输入缓冲】
+                    /**
+                     * 步骤2 把数据压人到解码器输入缓冲（ByteBuffer）返回Index
+                     * mCodec!!.dequeueInputBuffer(2000) 2000是查询是否可用等待的时间
+                     * 返回的是索引
+                     * */
                     mIsEOS = pushBufferToDecoder()
                 }
 
                 //【解码步骤：3. 将解码好的数据从缓冲区拉取出来】
+                /**
+                 * 解码过程交给MediaCodec，把解码好的数据拉出来（根据压人的时候的索引）
+                 * 交友给Extractor 提前解码器数据，（Extractor为读取数据的类）
+                 * 填充到缓冲区周年
+                 * */
                 val index = pullBufferFromDecoder()
                 if (index >= 0) {
                     // ---------【音视频同步】-------------
@@ -137,10 +147,15 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
                         sleepRender()
                     }
                     //【解码步骤：4. 渲染】
+                    /**
+                     * 步骤四，渲染，由子类来渲，不同类不同渲染方法
+                     * */
                     if (mSyncRender) {// 如果只是用于编码合成新视频，无需渲染
                         render(mOutputBuffers!![index], mBufferInfo)
                     }
-
+                    /**
+                     * 解码好的数据传出来
+                     * */
                     //将解码数据传递出去
                     val frame = Frame()
                     frame.buffer = mOutputBuffers!![index]
@@ -148,6 +163,10 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
                     mStateListener?.decodeOneFrame(this, frame)
 
                     //【解码步骤：5. 释放输出缓冲】
+                    /**
+                     * 步骤五释放，可以重新压人数据
+                     * 第二个参数这个参数在视频解码时，用于决定是否要将这一帧数据显示出来。
+                     * */
                     mCodec!!.releaseOutputBuffer(index, true)
 
                     if (mState == DecodeState.START) {
@@ -155,6 +174,10 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
                     }
                 }
                 //【解码步骤：6. 判断解码是否完成】
+                /**
+                 * 拿到的数据是否是结束标志
+                 * 释放解码器
+                 * */
                 if (mBufferInfo.flags == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
                     Log.i(TAG, "解码结束")
                     mState = DecodeState.FINISH
@@ -212,13 +235,26 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
 
     private fun initCodec(): Boolean {
         try {
+            //根据视频编码格式初始化解码器，初始化MediaCodec
+            /**
+             * 步骤一
+             * 初始化步骤都是
+             * 根据格式获取格式对应的类别
+             * 在mediacode 周年查找这个type对应的解码器
+             * 最后，创建解码器
+             * 格式-》type ——》MediaCodec
+             * */
             val type = mExtractor!!.getFormat()!!.getString(MediaFormat.KEY_MIME)
             mCodec = MediaCodec.createDecoderByType(type)
+
+            //配置解码器
             if (!configCodec(mCodec!!, mExtractor!!.getFormat()!!)) {
                 waitDecode()
             }
+            //启动解码器
             mCodec!!.start()
 
+            //获取输入输出缓冲区
             mInputBuffers = mCodec?.inputBuffers
             mOutputBuffers = mCodec?.outputBuffers
         } catch (e: Exception) {
@@ -227,20 +263,40 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
         return true
     }
 
+    /**
+     * 步骤2
+     * 把数据压入解码栈中
+     * */
     private fun pushBufferToDecoder(): Boolean {
+        /**
+         * 查询可用的缓冲区索引，每两秒 ， 在可用的数据缓冲区压人未解码数据，解码后当数据缓冲区成功渲染
+         * 又变成可用用的数据缓冲区
+         * */
         var inputBufferIndex = mCodec!!.dequeueInputBuffer(1000)
         var isEndOfStream = false
 
+
         if (inputBufferIndex >= 0) {
+            /**
+             *  获取mediacode的输入缓冲区
+             *  mCodec?.inputBuffers
+             *  拿到他对应的索引的buffer
+             *  通过Extra读取文件数据，压入到缓冲区里
+             * */
             val inputBuffer = mInputBuffers!![inputBufferIndex]
             val sampleSize = mExtractor!!.readBuffer(inputBuffer)
 
+            /**
+             * 调用 queueInoputBuffer 提交数据，没有数据时提交结束标志
+             * */
             if (sampleSize < 0) {
                 //如果数据已经取完，压入数据结束标志：MediaCodec.BUFFER_FLAG_END_OF_STREAM
                 mCodec!!.queueInputBuffer(inputBufferIndex, 0, 0,
                     0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                 isEndOfStream = true
+                //结束
             } else {
+
                 mCodec!!.queueInputBuffer(inputBufferIndex, 0,
                     sampleSize, mExtractor!!.getCurrentTimestamp(), 0)
             }
@@ -248,8 +304,18 @@ abstract class BaseDecoder(private val mFilePath: String): IDecoder {
         return isEndOfStream
     }
 
+    /**
+     * 查询是否有可以用的数据（解码好的）缓冲区可以去渲染的
+     * */
     private fun pullBufferFromDecoder(): Int {
         // 查询是否有解码完成的数据，index >=0 时，表示数据有效，并且index为缓冲区索引
+        /**
+         *1000为等待时间
+         * MediaCodec.INFO_OUTPUT_FORMAT_CHANGED：输出格式改变了
+         * MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED：输入缓冲改变了
+         * MediaCodec.INFO_TRY_AGAIN_LATER：没有可用数据，等会再来
+         * 大于等于0：有可用数据，index就是输出缓冲索引
+         * */
         var index = mCodec!!.dequeueOutputBuffer(mBufferInfo, 1000)
         when (index) {
             MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {}

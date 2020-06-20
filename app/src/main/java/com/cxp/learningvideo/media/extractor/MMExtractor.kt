@@ -2,6 +2,7 @@ package com.chenlittleping.videoeditor.decoder
 
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import com.cxp.learningvideo.media.IExtractor
 import java.nio.ByteBuffer
 
 
@@ -17,7 +18,9 @@ import java.nio.ByteBuffer
 
 class MMExtractor(path: String?) {
 
-    /**音视频分离器*/
+    /**音视频分离器
+     * MediaExtractor 主要用于读取操作
+     * */
     private var mExtractor: MediaExtractor? = null
 
     /**音频通道索引*/
@@ -42,6 +45,7 @@ class MMExtractor(path: String?) {
 
     /**
      * 获取视频格式参数
+     *
      */
     fun getVideoFormat(): MediaFormat? {
         for (i in 0 until mExtractor!!.trackCount) {
@@ -59,6 +63,7 @@ class MMExtractor(path: String?) {
 
     /**
      * 获取音频格式参数
+     * getTrackFormat 来获取参数
      */
     fun getAudioFormat(): MediaFormat? {
         for (i in 0 until mExtractor!!.trackCount) {
@@ -74,9 +79,17 @@ class MMExtractor(path: String?) {
         } else null
     }
 
+
+
     /**
-     * 读取视频数据
-     */
+     * 读取视频数据到byteBuffer
+     * 在此之前，Extractor 要做的事情
+     * 1，初始化，设置录制
+     * 2，获取音视频对应的格式  getTrackCount
+     * 3，选择对应的通道  selectTrackCount
+     * 4，从视频里读取数据流 bytebuffer
+     * 5,释放
+     * */
     fun readBuffer(byteBuffer: ByteBuffer): Int {
         byteBuffer.clear()
         selectSourceTrack()
@@ -94,6 +107,7 @@ class MMExtractor(path: String?) {
 
     /**
      * 选择通道
+     *
      */
     private fun selectSourceTrack() {
         if (mVideoTrack >= 0) {
